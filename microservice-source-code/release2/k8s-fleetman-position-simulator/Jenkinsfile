@@ -1,0 +1,39 @@
+pipeline {
+    agent any
+    environment {
+        MINIKUBE_SSH_KEY = credentials('minikube-ssh-key-id') // Assuming you have stored the SSH key as a credential
+    }
+    stages {
+        stage('Preparation') {
+            steps {
+                checkout scm
+                sh "git rev-parse --short HEAD > .git/commit-id"
+                script {
+                    commit_id = readFile('.git/commit-id').trim()
+                }
+            }
+        }
+        stage('Build') {
+            steps {
+                echo 'Building...'
+                sh """
+                    scp -r -i ${MINIKUBE_SSH_KEY} ./* docker@$(minikube ip):/path/to/destination
+                    minikube ssh 'docker build -t position-tracker:${commit_id} /path/to/destination'
+                """
+                echo 'Build complete'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                echo 'Deploying to Kubernetes'
+                sh """
+                    sed -i -r 's/position-tracker/position-tracker:${commit_id}/' position-tracker.yaml
+                    kubectl get all
+                    kubectl apply -f position-tracker.yaml
+                    kubectl get all
+                """
+                echo 'Deployment complete'
+            }
+        }
+    }
+}
